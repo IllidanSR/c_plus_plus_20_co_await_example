@@ -1,6 +1,8 @@
 #include <coroutine>
 #include <memory>
+#include <future>
 #include <iostream>
+
 
 template<typename T>
 struct coreturn {
@@ -32,12 +34,10 @@ struct coreturn {
             std::cout << "Promise died" << std::endl;
         }
         auto return_value(T v) {
-            std::cout << "Got an answer of " << v << std::endl;
             value = v;
             return std::suspend_never{};
         }
         auto final_suspend() {
-            std::cout << "Finished the coro" << std::endl;
             return std::suspend_always{};
         }
         void unhandled_exception() {
@@ -48,31 +48,25 @@ struct coreturn {
     };
     bool await_ready() {
         const auto ready = coro.done();
-        std::cout << "Await " << (ready ? "is ready" : "isn't ready") << std::endl;
         return coro.done();
     }
 
     void await_suspend(std::coroutine_handle<> awaiting) {
-        std::cout << "About to resume the lazy" << std::endl;
         coro.resume();
-        std::cout << "About to resume the awaiter" << std::endl;
         awaiting.resume();
     }
 
     auto await_resume() {
         const auto r = coro.promise().value;
-        std::cout << "Await value is returned: " << r << std::endl;
         return r;
     }
 protected:
     T get() {
-        std::cout << "We got asked for the return value..." << std::endl;
         if ( not coro.done() ) coro.resume();
         return coro.promise().value;
     }
     coreturn(handle_type h)
             : coro(h) {
-        std::cout << "Created a coreturn wrapper object" << std::endl;
     }
     handle_type coro;
 };
@@ -82,35 +76,28 @@ struct sync : public coreturn<T> {
     using coreturn<T>::coreturn;
     using handle_type = typename coreturn<T>::handle_type;
     T get() {
-        std::cout << "We got asked for the return value..." << std::endl;
         return coreturn<T>::get();
     }
     bool await_ready() {
         const auto ready = coro.done();
-        std::cout << "Await " << (ready ? "is ready" : "isn't ready") << std::endl;
         return coro.done();
     }
 
     void await_suspend(std::coroutine_handle<> awaiting) {
-        std::cout << "About to resume the lazy" << std::endl;
         coro.resume();
-        std::cout << "About to resume the awaiter" << std::endl;
         awaiting.resume();
     }
 
     auto await_resume() {
         const auto r = coro.promise().value;
-        std::cout << "Await value is returned: " << r << std::endl;
         return r;
     }
     handle_type coro;
     struct promise_type : public coreturn<T>::promise {
         auto get_return_object() {
-            std::cout << "Send back a sync" << std::endl;
             return sync<T>{handle_type::from_promise(*this)};
         }
         auto initial_suspend() {
-            std::cout << "Started the coroutine, don't stop now!" << std::endl;
             return std::suspend_never{};
         }
     };
@@ -122,7 +109,6 @@ struct lazy : public coreturn<T> {
     using coreturn<T>::coreturn;
     using handle_type = typename coreturn<T>::handle_type;;
     T get() {
-        std::cout << "We got asked for the return value..." << std::endl;
         if ( not this->coro.done() ) this->coro.resume();
         return coreturn<T>::get();
     }
@@ -130,44 +116,44 @@ struct lazy : public coreturn<T> {
 
     struct promise_type : public coreturn<T>::promise {
         auto get_return_object() {
-            std::cout << "Send back a lazy" << std::endl;
             return lazy<T>{handle_type::from_promise(*this)};
         }
         auto initial_suspend() {
-            std::cout << "Started the coroutine, put the brakes on!" << std::endl;
             return std::suspend_always{};
         }
     };
 };
 
-/*
-sync<int> await_answer() {
-    std::cout << "Started await_answer" << std::endl;
-    auto a = answer();
-    std::cout << "Got a coroutine, let's get a value" << std::endl;
-    auto v = co_await a;
-    std::cout << "And the coroutine value is: " << v << std::endl;
-    v = co_await a;
-    std::cout << "And the coroutine value is still: " << v << std::endl;
-    co_return 0;
+
+void function() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    std::cout << "FUNCTION" << std::endl;
 }
-*/
-lazy<int> answer() {
+template <typename ReturnType>
+ReturnType answer() {
     std::cout << "Thinking deep thoghts..." << std::endl;
-    co_return 42;
+    auto v = std::async(std::launch::async, function);
+    v.get();
+    co_return 2;
 }
 
 sync<int> await_answer() {
     std::cout << "Started await_answer" << std::endl;
-    auto a = answer();
+    auto a = answer<lazy<int>>();
     std::cout << "Got a coroutine, let's get a value" << std::endl;
     auto v = co_await a;
-    std::cout << "And the coroutine value is: " << v << std::endl;
-    v = co_await a;
-    std::cout << "And the coroutine value is still: " << v << std::endl;
-    co_return 0;
+    std::cout << "And the coroutine value is: " << std::endl;
+    /*v = co_await a;
+    std::cout << "And the coroutine value is still: " << v << std::endl;*/
+    co_return v;
 }
 
 int main() {
-    return await_answer().get();
+    auto value1 = await_answer().get();
+    auto value2 = await_answer().get();
+    auto value3 = await_answer().get();
+    std::cout << "VALUE : " << value1 << std::endl;
+    std::cout << "VALUE : " << value2 << std::endl;
+    std::cout << "VALUE : " << value3 << std::endl;
+    return 0;
 }
