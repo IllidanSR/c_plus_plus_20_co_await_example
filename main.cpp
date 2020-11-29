@@ -132,8 +132,7 @@ void function() {
 template <typename ReturnType>
 ReturnType answer() {
     std::cout << "Thinking deep thoghts..." << std::endl;
-    auto v = std::async(std::launch::async, function);
-    v.get();
+    function();
     co_return 2;
 }
 
@@ -152,8 +151,22 @@ int main() {
     auto value1 = await_answer().get();
     auto value2 = await_answer().get();
     auto value3 = await_answer().get();
+    auto value4 = await_answer().get();
+    auto value5 = std::async(std::launch::async, [](){
+        std::cout << "RUN" << std::endl;
+        auto v = await_answer().get();
+        std::cout << "VALUE 5 : " << v << std::endl;
+        return v;});
+    auto value6 = await_answer().get();
+    auto value7 = await_answer().get();
+    auto value8 = await_answer().get();
+    auto value9 = await_answer().get();
+    auto value10 = await_answer().get();
+    auto value11 = await_answer().get();
+    auto value12 = await_answer().get();
     std::cout << "VALUE : " << value1 << std::endl;
-    std::cout << "VALUE : " << value2 << std::endl;
-    std::cout << "VALUE : " << value3 << std::endl;
+    std::cout << "VALUE5 : " << std::endl;
+    value5.get();
+    std::cout << "VALUE : " << value12 << std::endl;
     return 0;
 }
