@@ -98,45 +98,61 @@ struct my_coroutine : public coroutine_<T> {
     };
 };
 
-class event_awaiter_type {
+using coro_t = std::coroutine_handle<>;
+class evt_awaiter_t {
     struct awaiter;
-    std::list<awaiter> await_lst;
-    bool set_v;
+
+    // we want to pop front and push back WITHOUT iterator invalidation
+    std::list<awaiter> lst_;
+    bool set_;
+
     struct awaiter {
-        event_awaiter_type &eventAwaiterType;
-        std::coroutine_handle<> coro = nullptr;
-        awaiter(event_awaiter_type event) : eventAwaiterType(event) {}
-        bool await_ready() {return eventAwaiterType.is_set();}
-        void await_suspend(std::coroutine_handle<> coroutineHandle) {
-            coro = coroutineHandle;
-            eventAwaiterType.push_awaiter(*this);
+        evt_awaiter_t &event_;
+        coro_t coro_ = nullptr;
+        awaiter(evt_awaiter_t &event) noexcept : event_(event) {}
+
+        bool await_ready() const noexcept { return event_.is_set(); }
+
+        void await_suspend(coro_t coro) noexcept {
+            coro_ = coro;
+            event_.push_awaiter(*this);
         }
-        void await_resume() {eventAwaiterType.reset();}
+
+        void await_resume() noexcept { event_.reset(); }
     };
 
 public:
-    event_awaiter_type(bool set = false) : set_v(set) {};
-    event_awaiter_type(const event_awaiter_type &value) {};
-    event_awaiter_type &operator=(const event_awaiter_type&) = delete;
-    event_awaiter_type(event_awaiter_type &&value) = delete;
-    event_awaiter_type &operator=(event_awaiter_type&&) = delete;
-    bool is_set() {return set_v;}
-    void push_awaiter(awaiter await_) {await_lst.push_back(await_);}
-    awaiter operator co_await() noexcept { return awaiter{*this}; }
-    void set() {
-        set_v = true;
-        auto n_to_resume = await_lst.size();
-        while (n_to_resume > 0) {
-            await_lst.front().coro.resume();
-            await_lst.pop_front();
-            n_to_resume--;
-        }
-    }
-    void reset() {
-        set_v = false;
-    }
-};
+    evt_awaiter_t(bool set = false) : set_{set} {}
+    evt_awaiter_t(const evt_awaiter_t &) = delete;
+    evt_awaiter_t &operator=(const evt_awaiter_t &) = delete;
+    evt_awaiter_t(evt_awaiter_t &&) = delete;
+    evt_awaiter_t &operator=(evt_awaiter_t &&) = delete;
 
+public:
+    bool is_set() const noexcept { return set_; }
+    void push_awaiter(awaiter a) { lst_.push_back(a); }
+
+    awaiter operator co_await() noexcept { return awaiter{*this}; }
+
+    void set() noexcept {
+        set_ = true;
+#if INEFF
+        auto ntoresume = lst_.size();
+    while (ntoresume > 0) {
+      lst_.front().coro_.resume();
+      lst_.pop_front();
+      ntoresume--;
+    }
+#else
+        std::list<awaiter> toresume;
+        toresume.splice(toresume.begin(), lst_);
+        for (auto s: toresume)
+            s.coro_.resume();
+#endif
+    }
+
+    void reset() noexcept { set_ = false; }
+};
 class SubClassTest {
 public:
     double x;
@@ -188,7 +204,6 @@ my_coroutine<int> await_answer() {
     t.resume();
     return 0;
 }*/
-
 struct resumable {
     struct promise_type {
         using coro_handle = std::coroutine_handle<promise_type>;
@@ -315,7 +330,8 @@ private:
     coro_handle handle_;
 };
 
-
+// weakly incapsulated resumable object
+// have ability to open handle
 struct resumable_noinc {
     struct promise_type {
         using coro_handle = std::coroutine_handle<promise_type>;
@@ -350,8 +366,9 @@ private:
 };
 
 
+
 int g_value;
-event_awaiter_type g_evt;
+evt_awaiter_t g_evt;
 
 void producer() {
     std::cout << "Producer started" << std::endl;
