@@ -1,6 +1,8 @@
 #include <coroutine>
 #include <memory>
 #include <list>
+#include <map>
+#include <unordered_map>
 #include <thread>
 #include <assert.h>
 #include <iostream>
@@ -104,8 +106,9 @@ class evt_awaiter_t {
 
     // we want to pop front and push back WITHOUT iterator invalidation
     std::list<awaiter> lst_;
+    std::map<int, awaiter> awaiter_map;
     bool set_;
-
+    std::atomic_int index = 0;
     struct awaiter {
         evt_awaiter_t &event_;
         coro_t coro_ = nullptr;
@@ -131,9 +134,18 @@ public:
 public:
     bool is_set() const noexcept { return set_; }
     void push_awaiter(awaiter a) { lst_.push_back(a); }
+    int add_awaiter(awaiter a) {
+        int ind = index++;
+        awaiter_map.insert(std::pair<int, awaiter>(ind, a));
+        return ind;
+    }
 
     awaiter operator co_await() noexcept { return awaiter{*this}; }
-
+    void set_to_map(int ind) {
+        set_ = true;
+        auto corout = awaiter_map.find(ind);
+        corout->second.coro_.resume();
+    }
     void set() noexcept {
         set_ = true;
 #if INEFF
@@ -378,15 +390,19 @@ void producer() {
     g_evt.set();
 }
 
-resumable_no_own consumer1() {
+resumable_no_own consumer1(SubClassTest* value) {
     std::cout << "Consumer1 started" << std::endl;
     co_await g_evt;
+    std::cout << "value in consumer 1 : " << value->x << std::endl;
+    value->x = value->x + 10;
     std::cout << "Consumer1 resumed" << std::endl;
 }
 
-resumable_no_own consumer2() {
+resumable_no_own consumer2(SubClassTest *value) {
     std::cout << "Consumer2 started" << std::endl;
     co_await g_evt;
+    std::cout << "value in consumer 2 : " << value->x << std::endl;
+    value->x = value->x + 10;
     std::cout << "Consumer2 resumed" << std::endl;
 }
 
@@ -399,10 +415,12 @@ resumable_no_own consumer3() {
 }
 
 int main() {
-    consumer1();
-    consumer2();
+    SubClassTest subClassTest;
+    subClassTest.x = 1;
+    consumer1(&subClassTest);
+    consumer2(&subClassTest);
     consumer3();
     producer();
-    consumer1();
+    consumer1(&subClassTest);
     producer();
 }
