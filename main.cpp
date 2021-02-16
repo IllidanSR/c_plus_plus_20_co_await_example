@@ -10,8 +10,6 @@ using coro_t = std::coroutine_handle<>;
 
 class evt_awaiter_t {
     struct awaiter;
-
-    // we want to pop front and push back WITHOUT iterator invalidation
     std::list<awaiter> lst_;
     std::map<int, awaiter> awaiter_map;
     bool set_;
@@ -30,6 +28,9 @@ class evt_awaiter_t {
         }
 
         void await_resume() noexcept { event_.reset(); }
+        /*~awaiter() {
+            event_.delete_from_map(*this);
+        }*/
     };
 
 public:
@@ -41,7 +42,6 @@ public:
 
 public:
     bool is_set() const noexcept { return set_; }
-    void push_awaiter(awaiter a) { lst_.push_back(a); }
     void set_id(int id) {
         local_id = id;
     }
@@ -61,8 +61,11 @@ public:
         auto corout = awaiter_map.find(idn);
         corout->second.coro_.done();
     }
-    int size() {
-       return awaiter_map.size();
+
+    void delete_from_map(awaiter a) {
+        a.coro_.done();
+/*        auto corout = awaiter_map.find(idn);
+        corout->second.coro_.done();*/
     }
 
     void reset() noexcept {
@@ -145,11 +148,9 @@ struct resumable_no_own {
         auto get_return_object() { return coro_handle::from_promise(*this); }
         auto initial_suspend() { return std::suspend_never(); }
 
-        // this one is critical: no suspend on final suspend
-        // effectively means "destroy your frame"
         auto final_suspend() { return std::suspend_never(); }
         void return_void() {}
-        void unhandled_exception() { std::terminate(); }
+        void unhandled_exception() {std::terminate();}
     };
 
     using coro_handle = std::coroutine_handle<promise_type>;
